@@ -20,77 +20,81 @@ function {
 		ZSH_HIGHLIGHT_HIGHLIGHTERS=()
 		return
 	fi
-	autoload -U is-at-least
 
-	if is-at-least 5.0.3; then
-		autosuggest-ensure-server
-	fi
+	autoload -U is-at-least
+	is-at-least 5.0.3 && autosuggest-ensure-server
 }
 
 ZLE_AUTOSUGGEST_SUSPEND_WIDGETS=(
-vi-cmd-mode vi-backward-char backward-char backward-word beginning-of-line
-history-search-forward history-search-backward up-line-or-history
-history-beginning-search-forward history-beginning-search-backward
-down-line-or-history
+	vi-cmd-mode vi-backward-char backward-char backward-word beginning-of-line
+	history-search-forward history-search-backward up-line-or-history
+	history-beginning-search-forward history-beginning-search-backward
+	down-line-or-history
 )
 
 ZLE_AUTOSUGGEST_COMPLETION_WIDGETS=(
-complete-word expand-or-complete expand-or-complete-prefix list-choices
-menu-complete reverse-menu-complete menu-expand-or-complete menu-select
-accept-and-menu-complete
+	complete-word expand-or-complete expand-or-complete-prefix list-choices
+	menu-complete reverse-menu-complete menu-expand-or-complete menu-select
+	accept-and-menu-complete
 )
 
 ZLE_AUTOSUGGEST_ACCEPT_WIDGETS=(
-vi-forward-char forward-char vi-forward-word forward-word vi-add-eol
-vi-add-next vi-forward-blank-word
+	vi-forward-char forward-char vi-forward-word forward-word vi-add-eol
+	vi-add-next vi-forward-blank-word
 )
 
 autosuggest-pause() {
 	[[ -z $ZLE_AUTOSUGGESTING ]] && return
 	unset ZLE_AUTOSUGGESTING
-	local widget
+
 	# When autosuggestions are disabled, kill the unmaterialized part
 	RBUFFER=''
+
 	zle -A autosuggest-paused-self-insert self-insert
 	zle -A autosuggest-magic-space-orig magic-space
 	zle -A autosuggest-backward-delete-char-orig backward-delete-char
 	zle -A autosuggest-accept-line-orig accept-line
+
+	local widget
 	for widget in $ZLE_AUTOSUGGEST_ACCEPT_WIDGETS $ZLE_AUTOSUGGEST_SUSPEND_WIDGETS $ZLE_AUTOSUGGEST_COMPLETION_WIDGETS; do
-		[[ -z $widgets[$widget] || -z $widgets[autosuggest-${widget}-orig] ]] &&\
-		 	continue
+		[[ -z $widgets[$widget] || -z $widgets[autosuggest-${widget}-orig] ]] && continue
 		eval "zle -A autosuggest-${widget}-orig ${widget}"
 	done
+
 	autosuggest-highlight-suggested-text
 
-	if [[ -n $ZLE_AUTOSUGGEST_CONNECTION ]]; then
-		zle -F $ZLE_AUTOSUGGEST_CONNECTION
-	fi
+	[[ -n $ZLE_AUTOSUGGEST_CONNECTION ]] && zle -F $ZLE_AUTOSUGGEST_CONNECTION
 }
 
 autosuggest-resume() {
 	[[ -n $ZLE_AUTOSUGGESTING ]] && return
 	ZLE_AUTOSUGGESTING=1
-	local widget
+
 	# Replace prediction widgets by versions that will also highlight RBUFFER
 	zle -A autosuggest-insert-or-space self-insert
 	zle -A autosuggest-insert-or-space magic-space
 	zle -A autosuggest-backward-delete-char backward-delete-char
 	zle -A autosuggest-accept-line accept-line
-	# Hook into some default widgets that should suspend autosuggestion
-	# automatically
+
+	local widget
+
+	# Hook into some default widgets that should suspend autosuggestion automatically
 	for widget in $ZLE_AUTOSUGGEST_ACCEPT_WIDGETS; do
 		[[ -z $widgets[$widget] ]] && continue
 		eval "zle -A autosuggest-accept-suggestion $widget"
 	done
+
 	for widget in $ZLE_AUTOSUGGEST_SUSPEND_WIDGETS; do
 		[[ -z $widgets[$widget] ]] && continue
 		eval "zle -A autosuggest-suspend $widget"
 	done
+
 	# Hook into completion widgets to trim RBUFFER before completion
 	for widget in $ZLE_AUTOSUGGEST_COMPLETION_WIDGETS; do
 		[[ -z $widgets[$widget] ]] && continue
 		eval "zle -A autosuggest-tab $widget"
 	done
+
 	if [[ -n $ZLE_AUTOSUGGEST_CONNECTION ]]; then
 		# install listen for suggestions asynchronously
 		zle -Fw $ZLE_AUTOSUGGEST_CONNECTION autosuggest-pop-suggestion
@@ -128,11 +132,14 @@ _zsh_highlight_autosuggest_highlighter_predicate() {
 }
 
 _zsh_highlight_autosuggest_highlighter() {
-	region_highlight+=("$(( $CURSOR + $AUTOSUGGESTION_HIGHLIGHT_CURSOR )) $(( $CURSOR + $#RBUFFER )) $AUTOSUGGESTION_HIGHLIGHT_COLOR")
+	local highlight_from=$(( $CURSOR + $AUTOSUGGESTION_HIGHLIGHT_CURSOR ))
+	local highlight_to=$(( $CURSOR + $#RBUFFER ))
+	region_highlight+=("$highlight_from $highlight_to $AUTOSUGGESTION_HIGHLIGHT_COLOR")
 }
 
 autosuggest-insert-or-space() {
-  setopt localoptions noshwordsplit noksharrays
+	setopt localoptions noshwordsplit noksharrays
+
 	if [[ $LBUFFER == *$'\012'* ]] || (( PENDING )); then
 		# Editing multiline buffer or pasting a chunk of text, pause
 		autosuggest-suspend
@@ -160,13 +167,13 @@ autosuggest-insert-or-space() {
 autosuggest-backward-delete-char() {
 	if (( $#LBUFFER > 1 )); then
 		setopt localoptions noshwordsplit noksharrays
-    if [[ $LBUFFER = *$'\012'* || $LASTWIDGET != (self-insert|magic-space|backward-delete-char) ]]; then
-      LBUFFER="$LBUFFER[1,-2]"
-    else
-      ((--CURSOR))
+		if [[ $LBUFFER = *$'\012'* || $LASTWIDGET != (self-insert|magic-space|backward-delete-char) ]]; then
+			LBUFFER="$LBUFFER[1,-2]"
+		else
+			((--CURSOR))
 			autosuggest-invalidate-highlight-cache
-      zle .history-beginning-search-forward || RBUFFER=''
-    fi
+			zle .history-beginning-search-forward || RBUFFER=''
+		fi
 		autosuggest-highlight-suggested-text
 	else
 		zle .kill-whole-line
@@ -196,12 +203,14 @@ autosuggest-paused-self-insert() {
 
 autosuggest-pop-suggestion() {
 	local words last_word suggestion
+
 	if ! IFS= read -r -u $ZLE_AUTOSUGGEST_CONNECTION suggestion; then
 		# server closed the connection, stop listenting
 		zle -F $ZLE_AUTOSUGGEST_CONNECTION
 		unset ZLE_AUTOSUGGEST_CONNECTION
 		return
 	fi
+
 	if [[ -n $suggestion ]]; then
 		local prefix=${suggestion%$'\2'*}
 		suggestion=${suggestion#*$'\2'}
